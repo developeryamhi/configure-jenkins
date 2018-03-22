@@ -33,7 +33,7 @@ OptionParser.new do |opts|
 
   opts.on("-u", "--user ", "Docker User") { |v| options[:user] = v }
   opts.on("-p", "--port ", "Primary Port") { |v| options[:port] = v }
-  opts.on("-sp", "--sport ", "Secondary Port") { |v| options[:sport] = v }
+  opts.on("-sp", "--s_port ", "Secondary Port") { |v| options[:sport] = v }
   opts.on("-n", "--name ", "Container Name") { |v| options[:name] = v }
   opts.on("-s", "--source ", "Docker Source") { |v| options[:source] = v }
   opts.on("-d", "--data ", "Data Directory Path") { |v| options[:data_path] = v }
@@ -46,10 +46,16 @@ OptionParser.new do |opts|
   end
 end.parse!
 
+
 # => start jenkins
 def jenkins_start(opts)
+	id = jenkins_id(opts)
 	puts "### starting jenkins on background ###"
-	run_in_shell "docker run --name #{opts[:name]} -u #{opts[:user]} --rm -d -p #{opts[:port]}:8080 -p #{opts[:sport]}:50000 -v #{opts[:data_path]}:/var/jenkins_home -v /var/run/docker.sock:/var/run/docker.sock #{opts[:source]}"
+	if id and id.length > 0
+		puts "container already running"
+	else
+		run_in_shell "docker run --name #{opts[:name]} -u #{opts[:user]} --rm -d -p #{opts[:port]}:8080 -p #{opts[:sport]}:50000 -v #{opts[:data_path]}:/var/jenkins_home -v /var/run/docker.sock:/var/run/docker.sock #{opts[:source]}"
+	end
 	puts "######################################"
 end
 
