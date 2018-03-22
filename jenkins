@@ -1,0 +1,184 @@
+#!/usr/bin/env ruby
+require 'optparse'
+
+
+# => get command
+command = 'usage'
+if ARGV.length > 0
+	if ARGV[0][0] != '-'
+		command = ARGV.shift
+	elsif ARGV[ARGV.length - 1][0] != '-'
+		command = ARGV.pop
+	end
+end
+
+# => options
+options = {
+	:user => 'root',
+	:port => 8080,
+	:sport => 50000,
+	:name => 'jenkinsci',
+	:source => 'jenkinsci/blueocean',
+	:data_path => 'jenkins-data',
+	:sock_file => '/var/run/docker.sock',
+	:password => false
+}
+
+# => fix empty for help
+#ARGV << '-h' if ARGV.empty?
+
+# => parse options
+OptionParser.new do |opts|
+  opts.banner = "Usage: jenkins command [options]"
+
+  opts.on("-u", "--user ", "Docker User") { |v| options[:user] = v }
+  opts.on("-p", "--port ", "Primary Port") { |v| options[:port] = v }
+  opts.on("-sp", "--sport ", "Secondary Port") { |v| options[:sport] = v }
+  opts.on("-n", "--name ", "Container Name") { |v| options[:name] = v }
+  opts.on("-s", "--source ", "Docker Source") { |v| options[:source] = v }
+  opts.on("-d", "--data ", "Data Directory Path") { |v| options[:data_path] = v }
+  opts.on("-s", "--sock ", "Docker Sock File Path") { |v| options[:sock_file] = v }
+  opts.on("-pw", "--password ", "Read Jenkins Initial Password") { |v| options[:password] = true }
+
+  opts.on_tail("-h", "--help", "Usage Help") do
+    puts opts
+    exit
+  end
+end.parse!
+
+# => start jenkins
+def jenkins_start(opts)
+	puts "### starting jenkins on background ###"
+	run_in_shell "docker run --name #{opts[:name]} -u #{opts[:user]} --rm -d -p #{opts[:port]}:8080 -p #{opts[:sport]}:50000 -v #{opts[:data_path]}:/var/jenkins_home -v /var/run/docker.sock:/var/run/docker.sock #{opts[:source]}"
+	puts "######################################"
+end
+
+# => stop jenkins
+def jenkins_stop(opts)
+	id = jenkins_id(opts)
+	puts "### stopping jenkins ###"
+	if id and id.length > 0
+		run_in_shell "docker stop #{id}"
+	else
+		puts "container not found"
+	end
+	puts "########################"
+end
+
+# => destroy jenkins
+def jenkins_destroy(opts)
+	id = jenkins_id(opts)
+	puts "### destroying jenkins ###"
+	if id and id.length > 0
+		run_in_shell "docker stop #{id}"
+		run_in_shell "docker rm #{id}"
+	else
+		puts "container not found"
+	end
+	puts "##########################"
+end
+
+# => restart jenkins
+def jenkins_restart(opts)
+	jenkins_stop opts
+	jenkins_start opts
+end
+
+# => info of jenkins
+def jenkins_info(opts)
+	id = jenkins_id(opts)
+	running = jenkins_running? opts
+	status = running ? "Running" : "Unknown"
+
+	puts "### Container Info ###"
+	if id and id.length > 0
+		puts "ID: #{id}"
+		puts "Name: #{opts[:name]}"
+		puts "Status: #{status}"
+		puts "Port: #{opts[:port]} (Web), #{opts[:sport]}"
+		puts "Source: #{opts[:source]}"
+		puts "Password: #{jenkins_password(opts)}" if running and opts[:password]
+	else
+		puts "container not found"
+	end
+	puts "######################"
+end
+
+# => id of jenkins container
+def jenkins_id(opts)
+	res = run_in_shell "docker ps -aqf \"name=#{opts[:name]}\"", true
+	res.gsub( /\n/, '' )
+end
+
+# => check jenkins container is running
+def jenkins_running?(opts)
+	begin
+		id = jenkins_id(opts)
+		running = id and id.length > 0 ? run_in_shell( "docker inspect -f {{.State.Running}} #{id}", true ) : false
+		return running
+	rescue => e
+		#puts e
+		return false
+	end
+end
+
+# => password of jenkins container
+def jenkins_password(opts)
+	begin
+		run_in_shell "docker cp #{opts[:name]}:/var/jenkins_home/secrets/initialAdminPassword ./temp-password"
+		pass = File.read './temp-password'
+		run_in_shell "unlink ./temp-password"
+		return pass
+	rescue
+		return ''
+	end
+end
+
+# => download jenkins source
+def jenkins_download(opts)
+	puts "### Downloading jenkins image ###"
+	run_in_shell "docker pull #{opts[:source]}"
+	puts "#################################"
+end
+
+# => access bash for jenkins
+def jenkins_bash(opts)
+	id = jenkins_id(opts)
+	puts "### Accessing bash ###"
+	if id and id.length > 0
+		run_in_shell "docker exec -it #{id} bash"
+	else
+		puts "container not found"
+	end
+end
+
+# => run in shell
+def run_in_shell(cmd, ret = false)
+	return `#{cmd}` if ret
+	system cmd
+end
+
+
+# => switch command
+case command
+when 'start'
+	jenkins_start options
+when 'stop'
+	jenkins_stop options
+when 'destroy'
+	jenkins_destroy options
+when 'restart'
+	jenkins_restart options
+when 'info'
+	jenkins_info options
+when 'id'
+	puts jenkins_id options
+when 'password'
+	puts jenkins_password options
+when 'download'
+	jenkins_download options
+when 'bash'
+	jenkins_bash options
+else
+	puts "no command specified. get more details via: ./jenkins -h"
+end
